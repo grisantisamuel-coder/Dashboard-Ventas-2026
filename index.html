@@ -133,6 +133,22 @@ tr:hover td{background:#f7fafe}
     <div class="kc bl"><div class="kl">Mejor mes</div><div class="kv" style="color:var(--ac)">Marzo</div><div class="ks">14,005 und · pico del año</div></div>
   </div>
 
+  
+  <div class="tc" style="margin-bottom:12px">
+    <div class="fbar" style="border-bottom:none;padding:12px 14px">
+      
+      <select class="fs" id="global-mes" onchange="syncGlobalFilters()">
+        <option value="ALL">Todos los meses</option>
+        <option value="Ene">Enero</option>
+        <option value="Feb">Febrero</option>
+        <option value="Mar">Marzo</option>
+        <option value="Abr">Abril</option>
+        <option value="May">Mayo (hasta día 12)</option>
+      </select>
+      <span class="fc">Filtro global de modelos y gráficos</span>
+    </div>
+  </div>
+
   <!-- CHARTS — clickable -->
   <div class="crow">
     <div class="cc">
@@ -172,8 +188,8 @@ tr:hover td{background:#f7fafe}
       <div class="tpill" data-t="TOLON" onclick="setTienda('TOLON',this)">TOLON</div>
     </div>
     <div class="fbar">
-      <input class="fi" type="text" placeholder="Buscar modelo..." id="srch-v" oninput="renderVentas()">
-      <select class="fs" id="sel-v-mes" onchange="onMesSelect()">
+      <input class="fi" type="text" placeholder="Buscar modelo..." id="srch-v" oninput="syncGlobalFilters()">
+      <select class="fs" id="sel-v-mes" onchange="onMesSelect()" style="display:none">
         <option value="ALL">Todos los meses</option>
         <option value="Ene">Enero</option>
         <option value="Feb">Febrero</option>
@@ -298,6 +314,8 @@ function applyChartFilter(type, value){
   updateActiveChip();
   updateChartHighlight();
   renderVentas();
+  updateKPIs('','ALL');
+refreshCharts();
 }
 
 function clearChartFilter(){
@@ -373,6 +391,8 @@ function onMesSelect(){
   document.getElementById('active-filter').style.display='none';
   updateChartHighlight();
   renderVentas();
+  updateKPIs('','ALL');
+refreshCharts();
 }
 
 // ── VENTAS DRILLDOWN ──
@@ -651,6 +671,106 @@ function goTab(id,el){
 }
 
 // ── CHARTS (clickable) ──
+
+
+function syncGlobalFilters(){
+  const q=(document.getElementById('srch-v').value||'').toLowerCase().trim();
+  const mes=document.getElementById('global-mes').value;
+
+  document.getElementById('sel-v-mes').value=mes;
+  activeMes=mes;
+
+  updateKPIs(q,mes);
+  renderVentas();
+  refreshCharts(q);
+}
+
+function getFilteredVentas(q=''){
+  return VENTAS.filter(r=>{
+    return !q || r.m.toLowerCase().includes(q);
+  });
+}
+
+function updateKPIs(q='',mes='ALL'){
+  const rows=getFilteredVentas(q);
+
+  const total=rows.reduce((s,r)=>{
+    return s + (mes==='ALL' ? r.total : (r[mes]||0));
+  },0);
+
+  const activos=rows.filter(r=>(mes==='ALL'?r.total:(r[mes]||0))>0).length;
+
+  let lider=[...rows].sort((a,b)=>{
+    const av=mes==='ALL'?a.total:(a[mes]||0);
+    const bv=mes==='ALL'?b.total:(b[mes]||0);
+    return bv-av;
+  })[0];
+
+  const meses=['Ene','Feb','Mar','Abr','May'];
+  let mejorMes='—';
+  let mejorVal=0;
+
+  meses.forEach(m=>{
+    const val=rows.reduce((s,r)=>s+(r[m]||0),0);
+    if(val>mejorVal){
+      mejorVal=val;
+      mejorMes=m;
+    }
+  });
+
+  document.querySelectorAll('.kv')[0].textContent=total.toLocaleString();
+  document.querySelectorAll('.kv')[1].textContent=activos;
+  document.querySelectorAll('.kv')[2].textContent=lider?.m || '—';
+  document.querySelectorAll('.kv')[4].textContent=
+    mes==='ALL'
+    ? mejorMes
+    : ({
+      Ene:'Enero',
+      Feb:'Febrero',
+      Mar:'Marzo',
+      Abr:'Abril',
+      May:'Mayo'
+    }[mes]||mes);
+}
+
+function refreshCharts(q=''){
+  if(!chartTrend || !chartTiendas) return;
+
+  const rows=getFilteredVentas(q);
+
+  const monthKeys=['Ene','Feb','Mar','Abr','May'];
+  const monthTotals=monthKeys.map(m=>
+    rows.reduce((s,r)=>s+(r[m]||0),0)
+  );
+
+  chartTrend.data.datasets[0].data=monthTotals;
+
+  const tiendas=[
+    ['GRIETA','GRIETA'],
+    ['SAMBIL','SAMBIL'],
+    ['CERRO VERDE','CERRO_VERDE'],
+    ['CHACAO','CHACAO'],
+    ['TALLER PED.','TALLER_PEDIDOS'],
+    ['GRAND','GRAND'],
+    ['TOLON','TOLON']
+  ];
+
+  const tiendaTotals=tiendas.map(t=>{
+    return rows.reduce((s,r)=>{
+      if(activeMes!=='ALL'){
+        return s + Math.round(((r[t[1]]||0)/(r.total||1))*(r[activeMes]||0));
+      }
+      return s + (r[t[1]]||0);
+    },0);
+  });
+
+  chartTiendas.data.datasets[0].data=tiendaTotals;
+
+  chartTrend.update();
+  chartTiendas.update();
+}
+
+
 function buildCharts(){
   const tc='#6080a0'; const gc='rgba(0,0,0,0.05)';
   const MES_LABELS=['Enero','Febrero','Marzo','Abril','Mayo*'];
