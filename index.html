@@ -463,7 +463,16 @@ function renderVentas(){
   function getVal(r){
     if(tienda==='ALL') return mes==='ALL'?r.total:(r[mes]||0);
     const tk=getTK(tienda);
-    return mes==='ALL'?(r[tk]||0):(r[tk]||0);
+    if(mes==='ALL') return r[tk]||0;
+    // Cross: tienda × mes — sum from variants
+    const variants=MV[r.m]||[];
+    if(!variants.length) return Math.round(((r[tk]||0)/(r.total||1))*(r[mes]||0));
+    return variants.reduce((s,v)=>{
+      const tiendaTotal=v[tk]||0;
+      const mesTotal=v[mes]||0;
+      const vTotal=v.total||1;
+      return s + Math.round((tiendaTotal/vTotal)*mesTotal);
+    },0);
   }
   
   let rows=VENTAS.map(r=>{return{...r,_val:getVal(r)}});
@@ -700,37 +709,66 @@ function updateKPIs(q='',mes='ALL'){
 
   const activos=rows.filter(r=>(mes==='ALL'?r.total:(r[mes]||0))>0).length;
 
+  // Tienda líder: sum per tienda for the active mes
+  const tiendaKeys=[
+    ['GRIETA','GRIETA'],['SAMBIL','SAMBIL'],['CERRO VERDE','CERRO_VERDE'],
+    ['CHACAO','CHACAO'],['TALLER PEDIDOS','TALLER_PEDIDOS'],['GRAND','GRAND'],['TOLON','TOLON']
+  ];
+  let liderTienda='—';
+  let liderTiendaVal=0;
+  tiendaKeys.forEach(([label,tk])=>{
+    let val=0;
+    if(mes==='ALL'){
+      val=rows.reduce((s,r)=>s+(r[tk]||0),0);
+    } else {
+      val=rows.reduce((s,r)=>{
+        const variants=MV[r.m]||[];
+        if(variants.length){
+          return s+variants.reduce((sv,v)=>{
+            const tt=v[tk]||0;
+            const mt=v[mes]||0;
+            const vt=v.total||1;
+            return sv+Math.round((tt/vt)*mt);
+          },0);
+        }
+        return s+Math.round(((r[tk]||0)/(r.total||1))*(r[mes]||0));
+      },0);
+    }
+    if(val>liderTiendaVal){liderTiendaVal=val;liderTienda=label;}
+  });
+
+  // Modelo líder
   let lider=[...rows].sort((a,b)=>{
     const av=mes==='ALL'?a.total:(a[mes]||0);
     const bv=mes==='ALL'?b.total:(b[mes]||0);
     return bv-av;
   })[0];
 
+  const mesNames={Ene:'Enero',Feb:'Febrero',Mar:'Marzo',Abr:'Abril',May:'Mayo'};
   const meses=['Ene','Feb','Mar','Abr','May'];
-  let mejorMes='—';
-  let mejorVal=0;
 
-  meses.forEach(m=>{
-    const val=rows.reduce((s,r)=>s+(r[m]||0),0);
-    if(val>mejorVal){
-      mejorVal=val;
-      mejorMes=m;
-    }
-  });
+  // Mejor mes KPI
+  let mejorMesText='—';
+  let mejorMesSubText='';
+  if(mes==='ALL'){
+    let mejorVal=0;
+    meses.forEach(m=>{
+      const val=rows.reduce((s,r)=>s+(r[m]||0),0);
+      if(val>mejorVal){mejorVal=val;mejorMesText=mesNames[m]||m;mejorMesSubText=mejorVal.toLocaleString()+' und · pico del año';}
+    });
+  } else {
+    const val=rows.reduce((s,r)=>s+(r[mes]||0),0);
+    mejorMesText=mesNames[mes]||mes;
+    mejorMesSubText=val.toLocaleString()+' und vendidas en ese mes';
+  }
 
   document.querySelectorAll('.kv')[0].textContent=total.toLocaleString();
   document.querySelectorAll('.kv')[1].textContent=activos;
   document.querySelectorAll('.kv')[2].textContent=lider?.m || '—';
-  document.querySelectorAll('.kv')[4].textContent=
-    mes==='ALL'
-    ? mejorMes
-    : ({
-      Ene:'Enero',
-      Feb:'Febrero',
-      Mar:'Marzo',
-      Abr:'Abril',
-      May:'Mayo'
-    }[mes]||mes);
+  document.querySelectorAll('.kv')[3].textContent=liderTienda;
+  document.querySelectorAll('.ks')[3].textContent=liderTiendaVal.toLocaleString()+' und vendidas';
+  document.querySelectorAll('.kv')[4].textContent=mejorMesText;
+  document.querySelectorAll('.ks')[4].textContent=mejorMesSubText;
 }
 
 function refreshCharts(q=''){
@@ -757,10 +795,20 @@ function refreshCharts(q=''){
 
   const tiendaTotals=tiendas.map(t=>{
     return rows.reduce((s,r)=>{
+      const tk=t[1];
       if(activeMes!=='ALL'){
-        return s + Math.round(((r[t[1]]||0)/(r.total||1))*(r[activeMes]||0));
+        const variants=MV[r.m]||[];
+        if(variants.length){
+          return s+variants.reduce((sv,v)=>{
+            const tt=v[tk]||0;
+            const mt=v[activeMes]||0;
+            const vt=v.total||1;
+            return sv+Math.round((tt/vt)*mt);
+          },0);
+        }
+        return s + Math.round(((r[tk]||0)/(r.total||1))*(r[activeMes]||0));
       }
-      return s + (r[t[1]]||0);
+      return s + (r[tk]||0);
     },0);
   });
 
